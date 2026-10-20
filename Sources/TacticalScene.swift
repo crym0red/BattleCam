@@ -1468,7 +1468,7 @@ final class TacScene {
             let rprog: Float? = focus.reloadT > 0 ? Float(max(0, min(1, 1 - focus.reloadT / max(0.1, gw.reload)))) : nil
             let vdt = Float(max(0.001, min(0.05, e.time - lastVmT)))
             lastVmT = e.time
-            vm.update(dt: vdt, t: Float(e.time), move: e.replayOn ? 0.6 : Float(min(1, hypot(e.move.dx, e.move.dy))), kick: e.replayOn ? (focus.flash > 0 ? 6 : 0) : Float(e.kick), reload: rprog, flashing: focus.flash > 0, recoilScale: TWeapons.recoil(focus.gun))
+            vm.update(dt: vdt, t: Float(e.time), move: e.replayOn ? 0.6 : Float(min(1, hypot(e.move.dx, e.move.dy))), kick: e.replayOn ? (focus.flash > 0 ? 6 : 0) : Float(e.kick), reload: rprog, flashing: focus.flash > 0, recoilScale: TWeapons.recoil(focus.gun), ads: (e.ads && !e.replayOn) ? 1 : 0)
             vm.flash(focus.flash > 0)
             // the muzzle lights the room for the length of the flash
             if muzzleLight == nil {
@@ -1490,11 +1490,11 @@ final class TacScene {
                 if on { ln.light?.intensity = CGFloat.random(in: 650...1250) }
                 ln.isHidden = !on
             }
-            camNode.camera?.fieldOfView += ((e.scoped ? TAtt.mods(e.me.gun).zoomFOV : TBody.fov) - (camNode.camera?.fieldOfView ?? TBody.fov)) * 0.3
+            camNode.camera?.fieldOfView += ((e.scoped ? TAtt.mods(e.me.gun).zoomFOV : (e.ads ? TBody.fov * 0.78 : TBody.fov)) - (camNode.camera?.fieldOfView ?? TBody.fov)) * 0.3
             // bodycam: strapped to the chest, so it breathes, rolls with every step and lags the aim
             let bt = Double(e.time)
             let mv = CGFloat(min(1, hypot(e.move.dx, e.move.dy)))
-            let calm: CGFloat = e.scoped ? 0.25 : 1
+            let calm: CGFloat = e.scoped ? 0.25 : (e.ads ? 0.5 : 1)
             let swayX = CGFloat(sin(bt * 1.35) * 0.45 + sin(bt * 0.57) * 0.6 + sin(bt * 4.1) * 0.12) * (1 + 2.2 * mv) * calm
             let swayY = CGFloat(sin(bt * 2.05) * 0.3 + abs(sin(bt * 6.2)) * 0.9 * Double(mv)) * calm
             camNode.camera?.bodycam = e.scoped ? 0.55 : 1
@@ -1504,7 +1504,7 @@ final class TacScene {
             camNode.camera?.vignettingIntensity = 0.55
             camNode.camera?.vignettingPower = 2.0
             camNode.position = MXVector3(Float(ex + jx * 0.3), Float(eh + swayY * 0.9), Float(ez + jz * 0.3))
-            camNode.look(at: MXVector3(Float(ex + dxv * 100 - dzv * swayX), Float(eh + swayY * 1.4), Float(ez + dzv * 100 + dxv * swayX)))
+            camNode.look(at: MXVector3(Float(ex + dxv * 100 - dzv * swayX), Float(eh + swayY * 1.4 + tan(e.pitch) * 100), Float(ez + dzv * 100 + dxv * swayX)))
         } else {
             vm.root.isHidden = true
             camNode.camera?.zNear = 10
@@ -1602,7 +1602,7 @@ final class TacScene {
         if TMap.kind == 7 {
             let o = TMap.origin(TMap.floorOf(focus.pos))
             let pl = CGPoint(x: focus.pos.x - o, y: focus.pos.y)
-            let inside = TMap.floorOf(focus.pos) == 2 || CGRect(x: 300, y: 225, width: 800, height: 500).contains(pl)
+            let inside = TMap.floorOf(focus.pos) == 2 || CGRect(x: 125, y: 100, width: 750, height: 600).contains(pl)
             tgt = inside ? 1.12 : 0.92
         }
         if focus.flash > 0 { tgt *= 0.93 }
@@ -1668,7 +1668,7 @@ extension TacticalEngine {
         }
         // stair labels
         let ff = TMap.floorOf(focus.pos)
-        for i in TMap.stairs.indices {
+        for i in TMap.stairs.indices where !fp {
             let r = TMap.stairRect(i, floor: ff)
             guard ff == TMap.stairLo[i] || ff == TMap.stairLo[i] + 1 else { continue }
             if let pt = pr(CGPoint(x: r.midX, y: r.midY), 56) {
@@ -1676,7 +1676,7 @@ extension TacticalEngine {
             }
         }
         // lane callouts
-        for rm in TMap.rooms where rm.fl == ff {
+        for rm in TMap.rooms where rm.fl == ff && !fp {
             let dd = hypot(rm.r.midX - focus.pos.x, rm.r.midY - focus.pos.y)
             if fp && dd > 900 { continue }
             guard let pt = pr(CGPoint(x: rm.r.midX, y: rm.r.midY), fp ? 74 : 4) else { continue }
@@ -1778,7 +1778,7 @@ extension TacticalEngine {
             dm.move(to: CGPoint(x: pt.x, y: pt.y - 12)); dm.addLine(to: CGPoint(x: pt.x + 8, y: pt.y - 22))
             dm.addLine(to: CGPoint(x: pt.x, y: pt.y - 32)); dm.addLine(to: CGPoint(x: pt.x - 8, y: pt.y - 22)); dm.closeSubpath()
             ctx.fill(dm, with: .color(Color.orange.opacity(al)))
-            ctx.draw(Text(pg.text).font(.system(size: 12, weight: .heavy)).foregroundColor(Color.yellow.opacity(al)), at: CGPoint(x: pt.x, y: pt.y - 44))
+            if !fp { ctx.draw(Text(pg.text).font(.system(size: 12, weight: .heavy)).foregroundColor(Color.yellow.opacity(al)), at: CGPoint(x: pt.x, y: pt.y - 44)) }
         }
         for pp in pops {
             guard let pt = pr(pp.pos, 50 + (1 - pp.life) * 40) else { continue }
@@ -1798,15 +1798,7 @@ extension TacticalEngine {
                 ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Color(white: 0.72).opacity(0.92 * Double(inSmoke))))
             }
             let cx = size.width / 2, hz = size.height / 2
-            var ch = Path()
-            let gap: CGFloat = 5 + recoil * 22 + (moving ? 9 : 0) + (me.crouch ? -2 : 0)
-            let ln: CGFloat = 9
-            ch.move(to: CGPoint(x: cx - gap - ln, y: hz)); ch.addLine(to: CGPoint(x: cx - gap, y: hz))
-            ch.move(to: CGPoint(x: cx + gap, y: hz)); ch.addLine(to: CGPoint(x: cx + gap + ln, y: hz))
-            ch.move(to: CGPoint(x: cx, y: hz - gap - ln)); ch.addLine(to: CGPoint(x: cx, y: hz - gap))
-            ch.move(to: CGPoint(x: cx, y: hz + gap)); ch.addLine(to: CGPoint(x: cx, y: hz + gap + ln))
-            ctx.fill(Path(ellipseIn: CGRect(x: cx - 1, y: hz - 1, width: 2, height: 2)), with: .color(.green.opacity(0.9)))
-            ctx.stroke(ch, with: .color(Color(red: 0.4, green: 1, blue: 0.45).opacity(0.9)), lineWidth: 2)
+            // no crosshair: hip fire is spread, ADS lines the weapon's own sights up with the view
             if hitT > 0 {
                 var hm = Path()
                 hm.move(to: CGPoint(x: cx - 9, y: hz - 9)); hm.addLine(to: CGPoint(x: cx + 9, y: hz + 9))

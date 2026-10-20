@@ -308,6 +308,13 @@ final class TPlayer {
     var strafe: CGFloat = 1
     var strafeT: CGFloat = 0
     var role = 0
+    var aggro = CGFloat.random(in: 0.08...0.95)      // 0 = holds angles and waits, 1 = pushes everything
+    var patience = CGFloat.random(in: 0.4...1.6)     // how long it keeps a post / plan
+    var reflex = CGFloat.random(in: 0.75...1.35)     // personal reaction-time multiplier
+    var nerve = CGFloat.random(in: 0.2...0.9)        // how readily it takes cover or backs off
+    var goal = CGPoint.zero
+    var goalT: CGFloat = 0
+    var commitAt: CGFloat = CGFloat.random(in: 10...55)
     var rank = 0   // 0 fighter, 1 staff, 2 admin
     var trophies = 0
     var site = 0
@@ -448,8 +455,9 @@ final class TacticalEngine {
     var diff = 1
     var move = CGVector.zero
     var aimIn: CGFloat? = nil
-    var autoAim = true
-    var autoFire = true
+    var autoAim = false      // aim assist removed: manual aim and manual fire only
+    var ads = false
+    var autoFire = false
     var autoTarget = -1
     var firing = false
     var actHeld = false
@@ -659,6 +667,7 @@ final class TacticalEngine {
         TMap.resetDoors()
         TMap.resetDestruction()
         squadGoals = [:]
+        for b in players { b.goalT = 0; b.goal = .zero; b.commitAt = CGFloat.random(in: 10...55); b.path = []; b.pathT = 0 }
         roundT0 = time
         lookDelta = 0
         packs = TMap.packPos.map { Pack(pos: $0, taken: false) }
@@ -685,7 +694,7 @@ final class TacticalEngine {
             p.nades = 1
             p.smokes = 1
             p.flashes = 1
-            if p.isPlayer { scoped = false; pitch = 0 }
+            if p.isPlayer { scoped = false; ads = false; pitch = 0 }
             if gameMode != 0 && gameMode != 6 { p.armor = 100; p.armorKind = 1 }
             p.blind = 0
             p.pingCd = 0
@@ -985,7 +994,7 @@ final class TacticalEngine {
         if gameMode == 3 { setGun(p, TWeapons.ladder[min(p.ladder, TWeapons.ladder.count - 1)]) }
         else { setGun(p, p.isPlayer ? myGun : gunPick()) }
         if p.isPlayer {
-            scoped = false; pitch = 0
+            scoped = false; ads = false; pitch = 0
             p.altGun = TacticalEngine.altFor(p.gun)
             p.altMag = magSize(p, p.altGun)
             p.altSpare = 99
@@ -1162,7 +1171,7 @@ final class TacticalEngine {
         guard p.alive else { return }
         if p.crouch && !coverNear(p) { p.crouch = false }
         let legMul: CGFloat = (gameMode == 6 && legWound) ? 0.62 : 1
-        let sp: CGFloat = (p.crouch ? 88 : (p.knife ? 195 : 170)) * (scoped ? 0.6 : 1) * legMul
+        let sp: CGFloat = (p.crouch ? 88 : (p.knife ? 195 : 170)) * (scoped ? 0.6 : (ads ? 0.75 : 1)) * legMul
         var mv = move
         let tgt = autoAim ? pickTarget(p) : nil
         autoTarget = tgt?.id ?? -1
@@ -1190,12 +1199,12 @@ final class TacticalEngine {
         p.fireCd -= dt
         if wantReload { wantReload = false; startReload(p) }
         if wantSwap { wantSwap = false; swapGun(p) }
-        if wantKnife { wantKnife = false; if !p.knife { p.knife = true; p.reloadT = 0; scoped = false; p.fireCd = max(p.fireCd, 0.3) } }
+        if wantKnife { wantKnife = false; if !p.knife { p.knife = true; p.reloadT = 0; scoped = false; ads = false; p.fireCd = max(p.fireCd, 0.3) } }
         if wantGun { wantGun = false; if p.knife { p.knife = false; p.fireCd = max(p.fireCd, 0.3) } }
         if p.reloadT > 0 {
             p.reloadT -= dt
             if p.reloadT <= 0 { finishReload(p) }
-        } else if (firing || (autoFire && aligned)) && p.fireCd <= 0 && !actHeld {
+        } else if firing && p.fireCd <= 0 && !actHeld {
             if p.knife { slash(p) } else if p.mag > 0 { shoot(p, 0) } else { startReload(p) }
         }
         if wantNade { wantNade = false; throwNade(p, p.aim, 420) }
@@ -1291,7 +1300,7 @@ final class TacticalEngine {
         let rMul = am.recoilMul * gm.rec
         if p.isPlayer {
             sprd += recoil * 0.045 * rMul + (moving ? 0.03 : 0) + (p.crouch ? -0.004 : 0)
-            if scoped { sprd *= 0.35 * am.scopeMul } else if TBody.on { sprd *= TBody.hipSpread }
+            if scoped { sprd *= 0.35 * am.scopeMul } else if ads { sprd *= 0.5 } else if TBody.on { sprd *= TBody.hipSpread }
             sprd = max(0.002, sprd)
             p.aim += CGFloat.random(in: -0.0035...0.0035) * (0.4 + recoil)
             recoil = min(1.2, recoil + 0.13 * rMul)
@@ -1565,10 +1574,9 @@ final class TacticalEngine {
             for p in players where p.alive && !p.isPlayer && TMap.floorOf(p.pos) == fl && tDist(p.pos, c) < 800 {
                 p.path = []
                 p.pathT = 0
-                let idx = players.filter { $0.team == p.team }.firstIndex { $0 === p } ?? 0
-                keys.insert(p.team * 8 + idx / 2)
+                // each bot decides for itself whether the noise is worth checking
+                if CGFloat.random(in: 0...1) < p.aggro * 0.8 { p.goal = c; p.goalT = time + 6 + 6 * p.patience }
             }
-            for k in keys where Bool.random() { squadGoals[k] = (c, time + 8) }
         }
     }
 
@@ -1578,15 +1586,27 @@ final class TacticalEngine {
         return CGPoint(x: r.midX + CGFloat.random(in: -r.width * 0.25...r.width * 0.25), y: r.midY + CGFloat.random(in: -r.height * 0.25...r.height * 0.25))
     }
 
-    /// shared destination for a pair of bots on the same team
+    /// each bot picks its own post: aggressive ones lean toward the objective, careful ones hold rooms away from friends
     private func squadGoalFor(_ p: TPlayer, bias: CGPoint?) -> CGPoint {
-        let idx = players.filter { $0.team == p.team }.firstIndex { $0 === p } ?? 0
-        let key = p.team * 8 + idx / 2
-        if let g = squadGoals[key], g.1 > time { return g.0 }
-        var pos = roomGoal()
-        if let b = bias, Bool.random() { pos = b }
-        squadGoals[key] = (pos, time + CGFloat.random(in: 12...24))
-        return pos
+        if p.goalT > time && p.goal != .zero { return p.goal }
+        let mates = players.filter { $0.team == p.team && $0 !== p && $0.alive }
+        var best = roomGoal(), bestScore = -CGFloat.greatestFiniteMagnitude
+        for _ in 0..<7 {
+            var c = roomGoal()
+            if let bi = bias, CGFloat.random(in: 0...1) < p.aggro * 0.8 { c = bi }
+            var sc = CGFloat.random(in: 0...40)
+            for m in mates {
+                let mp = m.goalT > time ? m.goal : m.pos
+                let d = tDist(c, mp)
+                if d < 190 { sc -= (190 - d) * 2.2 }
+            }
+            if let bi = bias { sc -= tDist(c, bi) * p.aggro * 0.06 }
+            sc -= tDist(c, p.pos) * (1 - p.aggro) * 0.02
+            if sc > bestScore { bestScore = sc; best = c }
+        }
+        p.goal = best
+        p.goalT = time + CGFloat.random(in: 7...20) * p.patience
+        return best
     }
 
     private func objective(_ p: TPlayer) -> CGPoint {
@@ -1612,7 +1632,6 @@ final class TacticalEngine {
         }
         let atk = p.team == atkTeam
         let o = CGPoint(x: cos(CGFloat(p.id) * 1.7) * 70, y: sin(CGFloat(p.id) * 2.3) * 45)
-        let idx = players.filter { $0.team == p.team }.firstIndex { $0 === p } ?? 0
         let off = CGPoint(x: cos(CGFloat(p.id) * 2.1) * 60, y: sin(CGFloat(p.id) * 2.1) * 60)
         if planted {
             if atk {
@@ -1623,7 +1642,7 @@ final class TacticalEngine {
                 return CGPoint(x: c.x + off.x * 1.6, y: c.y + off.y * 1.6)
             }
             // defenders come in from different squads / directions
-            if idx % 2 == 1 && time - plantedAt < 6 {
+            if p.aggro > 0.5 && time - plantedAt < 6 * p.patience {
                 let g = squadGoalFor(p, bias: nil)
                 return TMap.floorOf(g) == TMap.floorOf(bombPos) ? g : bombPos
             }
@@ -1632,7 +1651,7 @@ final class TacticalEngine {
         let r = TMap.site(atk ? atkSite : p.site)
         if atk {
             // squad 0 executes the site, the other squads flank through other floors and rooms, everyone commits after 35s
-            if idx / 2 == 0 || time - roundT0 > 35 { return CGPoint(x: r.midX + o.x, y: r.midY + o.y) }
+            if p.aggro > 0.82 || time - roundT0 > p.commitAt { return CGPoint(x: r.midX + o.x, y: r.midY + o.y) }
             let g = squadGoalFor(p, bias: CGPoint(x: r.midX, y: r.midY))
             return CGPoint(x: g.x + off.x, y: g.y + off.y)
         }
@@ -1661,11 +1680,18 @@ final class TacticalEngine {
                 if d < raidSight(p) && d < bd && see(p.pos, e.pos) { best = e; bd = d }
             }
             if let b = best {
-                if p.targetID != b.id { p.targetID = b.id; p.reactT = react[diff] }
+                if p.targetID != b.id { p.targetID = b.id; p.reactT = react[diff] * p.reflex }
                 p.lastSeen = b.pos
             } else if p.targetID >= 0 {
                 p.targetID = -1
-                p.hunt = 3
+                p.hunt = 3 * p.patience
+            }
+            if best == nil && p.targetID < 0 && p.hunt <= 0 && Double.random(in: 0...1) < 0.3 {
+                for e in players where e.team != p.team && e.alive && e.noiseT > 0 {
+                    if tDist(p.pos, e.pos) < 380 && TMap.floorOf(e.pos) == TMap.floorOf(p.pos) && CGFloat.random(in: 0...1) < p.aggro {
+                        p.hunt = 2.5; p.lastSeen = e.pos; break
+                    }
+                }
             }
         }
         var speed: CGFloat = 150
@@ -1687,12 +1713,12 @@ final class TacticalEngine {
             }
             if p.holding && tDist(p.pos, p.ambushPos) < 60 { p.crouch = true; return }
             let pc = TWeapons.cls(p.gun)
-            let pref: CGFloat = pc == "shotgun" ? 200 : (pc == "smg" ? 320 : (pc == "rifle" ? 460 : (pc == "sniper" ? 700 : 380)))
+            let pref: CGFloat = (pc == "shotgun" ? 200 : (pc == "smg" ? 320 : (pc == "rifle" ? 460 : (pc == "sniper" ? 700 : 380)))) * (1.2 - 0.5 * p.aggro)
             p.strafeT -= dt
-            if p.strafeT <= 0 { p.strafe = Bool.random() ? 1 : -1; p.strafeT = CGFloat.random(in: 0.5...1.4) }
+            if p.strafeT <= 0 { p.strafe = Bool.random() ? 1 : -1; p.strafeT = CGFloat.random(in: 0.35...1.8) * p.patience }
             p.hideT -= dt
             if p.hideT <= 0 {
-                p.hiding = p.hiding ? false : (p.hp < 50 || Double.random(in: 0...1) < 0.55)
+                p.hiding = p.hiding ? false : (p.hp < 50 * (0.5 + p.nerve) || Double.random(in: 0...1) < Double(0.15 + 0.6 * p.nerve * (1.1 - p.aggro)))
                 p.hideT = p.hiding ? CGFloat.random(in: 0.9...1.8) : CGFloat.random(in: 1.2...2.4)
                 p.cover = p.hiding ? coverSpot(p, e.pos) : nil
             }
@@ -2165,6 +2191,8 @@ struct TacticalPlay: View {
     var modeId = 0
     @State private var engine = TacticalEngine()
     @State private var lStart: CGPoint? = nil
+    @State private var lActive = false
+    @State private var lOff: CGSize = .zero
     @State private var lKnob: CGPoint = .zero
     @State private var rStart: CGPoint? = nil
     @State private var rKnob: CGPoint = .zero
@@ -2210,7 +2238,8 @@ struct TacticalPlay: View {
             OrientationLock.set(landscape: true)
             engine.fp = true
             engine.view3D = true
-            engine.autoAim = true
+            engine.autoAim = false
+            engine.autoFire = false
             autoOn = true
             let sxd = game.sx
             engine.killFx = sxd.fx
@@ -2317,29 +2346,16 @@ struct TacticalPlay: View {
         GeometryReader { g in
             ZStack {
                 HStack(spacing: 0) {
-                    Color.clear.contentShape(Rectangle())
-                        .gesture(DragGesture(minimumDistance: 0)
-                            .onChanged { v in
-                                lStart = v.startLocation
-                                lKnob = v.location
-                                let dx = v.location.x - v.startLocation.x, dy = v.location.y - v.startLocation.y
-                                let d = hypot(dx, dy)
-                                let k = min(1, d / 50)
-                                var mv = d > 4 ? CGVector(dx: dx / d * k, dy: dy / d * k) : .zero
-                                if let b = bridge, b.yaw != 0 {
-                                    let c = cos(b.yaw), sn = sin(b.yaw)
-                                    mv = CGVector(dx: c * mv.dx + sn * mv.dy, dy: -sn * mv.dx + c * mv.dy)
-                                }
-                                engine.move = mv
-                            }
-                            .onEnded { _ in lStart = nil; engine.move = .zero })
+                    Color.clear.frame(width: g.size.width * 0.5)
                     Color.clear.contentShape(Rectangle())
                         .gesture(DragGesture(minimumDistance: 0)
                             .onChanged { v in
                                 if fp {
-                                    let sens: CGFloat = engine.scoped ? 0.0035 : 0.008
+                                    let sens: CGFloat = engine.scoped ? 0.0035 : (engine.ads ? 0.0055 : 0.008)
                                     engine.lookDelta += (v.translation.width - lastLook) * sens
                                     lastLook = v.translation.width
+                                    // free look: dragging up looks up
+                                    engine.pitch = max(-0.75, min(0.75, engine.pitch - (v.translation.height - lastLookY) * sens * 0.8))
                                     lastLookY = v.translation.height
                                     return
                                 }
@@ -2351,6 +2367,33 @@ struct TacticalPlay: View {
                             }
                             .onEnded { _ in rStart = nil; lastLook = 0; lastLookY = 0; engine.aimIn = nil; engine.firing = false })
                 }
+                // fixed, always-visible movement stick (bottom-left)
+                let sb = CGPoint(x: 120, y: g.size.height - 112)
+                ZStack {
+                    Circle().fill(Color.black.opacity(0.28)).frame(width: 128, height: 128)
+                    Circle().stroke(Color.white.opacity(0.55), lineWidth: 2.5).frame(width: 128, height: 128)
+                    Circle().fill(Color.white.opacity(lActive ? 0.85 : 0.5)).frame(width: 54, height: 54)
+                        .offset(x: lOff.width, y: lOff.height)
+                    Image(systemName: "arrow.up").font(.system(size: 11, weight: .bold)).foregroundColor(.white.opacity(0.5)).offset(y: -52)
+                }
+                .frame(width: 210, height: 210)
+                .contentShape(Rectangle())
+                .position(sb)
+                .gesture(DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                    .onChanged { v in
+                        let dx = v.location.x - 105, dy = v.location.y - 105
+                        let d = max(0.001, hypot(dx, dy))
+                        let k = min(1, d / 58)
+                        lActive = true
+                        lOff = CGSize(width: dx / d * k * 58, height: dy / d * k * 58)
+                        var mv = d > 6 ? CGVector(dx: dx / d * k, dy: dy / d * k) : .zero
+                        if let b = bridge, b.yaw != 0 {
+                            let c = cos(b.yaw), sn = sin(b.yaw)
+                            mv = CGVector(dx: c * mv.dx + sn * mv.dy, dy: -sn * mv.dx + c * mv.dy)
+                        }
+                        engine.move = mv
+                    }
+                    .onEnded { _ in lActive = false; lOff = .zero; engine.move = .zero })
                 if lookOn {
                     Color.clear.contentShape(Rectangle())
                         .frame(width: g.size.width * 0.55, height: g.size.height)
@@ -2368,14 +2411,13 @@ struct TacticalPlay: View {
                             .onChanged { m in bridge?.dist = max(220, min(900, baseDist / m)) }
                             .onEnded { _ in baseDist = bridge?.dist ?? 430 })
                 }
-                if let s = lStart { stick(s, lKnob, Color.white) }
                 if let s = rStart { stick(s, rKnob, Color.red) }
                 if fp {
                     VStack {
                         Spacer()
                         HStack {
                             Spacer()
-                            fireButton.padding(.trailing, 108).padding(.bottom, 18)
+                            fireButton.padding(.trailing, 70).padding(.bottom, 30)
                         }
                     }
                 }
@@ -2389,7 +2431,7 @@ struct TacticalPlay: View {
     }
 
     private var fireButton: some View {
-        Circle().fill(Color.black.opacity(0.35)).frame(width: 84, height: 84)
+        Circle().fill(Color.black.opacity(0.35)).frame(width: 92, height: 92)
             .overlay(Circle().stroke(Color.white.opacity(0.7), lineWidth: 2.5))
             .overlay(Image(systemName: "scope").font(.system(size: 34, weight: .light)).foregroundColor(.white.opacity(0.95)))
             .gesture(DragGesture(minimumDistance: 0).onChanged { _ in engine.firing = true }.onEnded { _ in engine.firing = false })
@@ -2629,18 +2671,23 @@ struct TacticalPlay: View {
                         .buttonStyle(TuiPress()).position(x: W - 36, y: 236)
                     }
                     if e.me.alive {
-                        Button { e.scoped.toggle() } label: { vbtn("scope", 44, on: e.scoped) }
-                            .buttonStyle(TuiPress()).position(x: W - 96, y: 288)
                         Button { e.toggleCover() } label: { vbtn("figure.stand", 44, on: e.me.crouch) }
-                            .buttonStyle(TuiPress()).position(x: W - 36, y: 309)
+                            .buttonStyle(TuiPress()).position(x: W - 36, y: H - 96)
                         Button { e.jumpT = max(e.jumpT, 0.55) } label: { vbtn("arrow.up", 44) }
-                            .buttonStyle(TuiPress()).position(x: W - 36, y: 361)
+                            .buttonStyle(TuiPress()).position(x: W - 36, y: H - 44)
                         Button { e.wantReload = true } label: { vbtn("arrow.triangle.2.circlepath", 48) }
-                            .buttonStyle(TuiPress()).position(x: W - 198, y: H - 34)
-                        togglePill("target", "AIM", e.autoAim) { e.autoAim.toggle() }
-                            .position(x: W - 198, y: H - 114)
-                        togglePill("repeat", "AUTO", e.autoFire) { e.autoFire.toggle() }
-                            .position(x: W - 198, y: H - 82)
+                            .buttonStyle(TuiPress()).position(x: W - 214, y: H - 40)
+                        Button {
+                            if TWeapons.cls(e.me.gun) == "sniper" { e.scoped.toggle(); e.ads = false } else { e.ads.toggle(); e.scoped = false }
+                        } label: {
+                            let on = e.ads || e.scoped
+                            Text("ADS").font(.jk(14, .heavy))
+                                .foregroundColor(on ? .black : .white)
+                                .frame(width: 62, height: 62)
+                                .background(Circle().fill(on ? TUI.accent : Color.black.opacity(0.42)))
+                                .overlay(Circle().stroke(Color.white.opacity(on ? 0.85 : 0.5), lineWidth: 2))
+                        }
+                        .buttonStyle(TuiPress()).position(x: W - 214, y: H - 118)
                         BodycamAmmo(e: e).position(x: W / 2, y: H - 30)
                     } else {
                         Button { e.fast.toggle() } label: {
@@ -2741,8 +2788,6 @@ struct TacticalPlay: View {
                     Text("PAUSED").font(.jk(24, .heavy)).tracking(2).foregroundColor(.white)
                 }
                 .padding(.bottom, 4)
-                settingRow("target", "Aim assist", "Auto-fires when your crosshair is on an enemy", engine.autoAim) { engine.autoAim.toggle() }
-                settingRow("repeat", "Auto fire", "Shoots when your crosshair is on target", engine.autoFire) { engine.autoFire.toggle() }
                 settingRow("arrow.triangle.2.circlepath", "Flip faces", "Toggle if the world looks inside-out", MXRenderer.flipWinding) { MXRenderer.flipWinding.toggle(); UserDefaults.standard.set(MXRenderer.flipWinding, forKey: "ms.mx.flip") }
                 Button { engine.paused = false; engine.last = nil } label: {
                     HStack(spacing: 8) {

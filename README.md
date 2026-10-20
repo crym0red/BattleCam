@@ -19,7 +19,7 @@ On failure the run summary lists the compiler errors. The full log is in the `bu
 - `Sources/`: game and engine
   - `MX*.swift`: Metal engine (loader, renderer, shaders, materials)
   - `Tactical*.swift`, `Tac*.swift`: game logic, maps, HUD, weapons, lobby
-  - `TacAnnex.swift`: ANNEX, the small two-floor map with continuous stairs (default)
+  - `TacAnnex.swift`: ANNEX, the CQC two-floor map with continuous stairs (default)
   - `TacFX.swift`: bullet decals, dust, sparks, blood, glass
   - `TacMuzzle.swift`: muzzle flash
 - `Resources/`: gun models (`gun_*.glb`, `gunmeta.json`), Annex baked maps (`annex_f1.glb`, `annex_f2.glb`), fonts, fx
@@ -27,7 +27,7 @@ On failure the run summary lists the compiler errors. The full log is in the `bu
 
 ## Maps
 
-ANNEX (small, default), BLOCK 9 (large), CUSTOM (editor). Cycle them in the lobby.
+ANNEX (default): compact CQC house, 1000x800 lot, 10 rooms per floor, 2-3 doors on every room, one continuous staircase. BLOCK 9: large. CUSTOM: editor map. Pick one in the lobby's OPERATION card.
 
 ## Engine notes
 
@@ -35,6 +35,14 @@ ANNEX (small, default), BLOCK 9 (large), CUSTOM (editor). Cycle them in the lobb
 - Post: ACES tone mapping, bloom, adaptive exposure, lens dirt, bodycam grade.
 - Dynamic: 8 nearest point lights, muzzle-flash light, sun shadow map.
 - Not implemented: SSAO (needs a stored depth buffer).
+
+## Controls
+
+Fixed move stick (bottom-left). Drag the right side to free-look (up, down, left, right). FIRE button for manual shooting (no auto-fire, no aim assist). ADS toggle raises the weapon so its sight anchor sits on the camera axis with the barrel levelled, slows look sensitivity and tightens spread. No crosshair. Reload, crouch, jump.
+
+## Bots
+
+Every bot has its own traits (aggression, patience, reflex, nerve) and picks its own posts, so they spread out instead of moving as squads.
 
 ## Status
 
