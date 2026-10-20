@@ -122,7 +122,7 @@ final class TacImpactFX {
             // hole decal flat on the wall face, facing out along the normal
             if im.kind == 0 {
                 if holes[fl].count < 40 {
-                    let h = quad(holeMat, r(5, 8))
+                    let h = quad(holeMat, CGFloat(r(5, 8)))
                     h.renderingOrder = 30
                     holes[fl].append(h)
                 }
