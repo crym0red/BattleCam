@@ -1,0 +1,2 @@
+--- xcodebuild: WARNING: Using the first of multiple matching destinations:
+/Users/runner/work/BattleCam/BattleCam/Sources/TacFX.swift:125:43: error: cannot convert value of type 'Float' to expected argument type 'CGFloat'
