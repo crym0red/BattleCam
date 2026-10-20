@@ -317,53 +317,131 @@ struct LobbyView: View {
 
     // MARK: battle search
 
+    private func mono(_ n: CGFloat, _ w: Font.Weight = .bold) -> Font { .system(size: n, weight: w, design: .monospaced) }
+
+    private func recDot(_ label: String) -> some View {
+        TimelineView(.periodic(from: .now, by: 0.5)) { tl in
+            let on = Int(tl.date.timeIntervalSinceReferenceDate * 2) % 2 == 0
+            HStack(spacing: 6) {
+                Circle().fill(Color(red: 0.95, green: 0.1, blue: 0.1)).frame(width: 9, height: 9).opacity(on ? 1 : 0.25)
+                Text(label).font(mono(12)).foregroundColor(.white)
+            }
+        }
+    }
+
+    private static let stampFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd  HH:mm:ss"
+        return f
+    }()
+
+    private func stamp() -> some View {
+        TimelineView(.periodic(from: .now, by: 1)) { tl in
+            Text(Self.stampFmt.string(from: tl.date)).font(mono(10, .regular)).foregroundColor(.white.opacity(0.75))
+        }
+    }
+
+    private func lsBar(_ frac: CGFloat, _ col: Color, h: CGFloat = 5) -> some View {
+        GeometryReader { g in
+            ZStack(alignment: .leading) {
+                Rectangle().fill(Color.white.opacity(0.14))
+                Rectangle().fill(col).frame(width: g.size.width * max(0, min(1, frac)))
+            }
+        }
+        .frame(height: h)
+    }
+
+    private func unlockRow(_ title: String, _ sub: String, _ v: Int, _ n: Int, _ col: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(title).font(.jk(11, .heavy)).foregroundColor(.white)
+                Spacer()
+                Text("\(v)/\(n)").font(mono(11)).foregroundColor(col)
+            }
+            Text(sub).font(.jk(9, .medium)).foregroundColor(.white.opacity(0.6)).lineLimit(1)
+            lsBar(CGFloat(v) / CGFloat(max(1, n)), col)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 7)
+        .overlay(alignment: .bottom) { Rectangle().fill(LS.line).frame(height: 1) }
+    }
+
     private func searchScreen(_ t: TacData, _ size: CGSize) -> some View {
         let W = size.width, H = size.height
         let ri = TacRank.index(TacRank.totalXP(t))
+        let mc = CS.modeCols[nav.tacMode]
         return ZStack {
             AvatarSoldierPreview(style: TacAvatar.style(TacAvatar.myKey), rank: ri, gun: nav.tacGun)
                 .frame(width: W * 0.4, height: H * 0.92).position(x: W * 0.5, y: H * 0.58).allowsHitTesting(false)
-            HStack(spacing: 14) {
-                Circle().fill(CS.modeCols[nav.tacMode].opacity(0.3)).frame(width: 54, height: 54)
-                    .overlay(SF(CS.modeIcons[nav.tacMode], "circle.fill").font(.system(size: 24, weight: .bold)).foregroundColor(CS.modeCols[nav.tacMode]))
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("BATTLE SEARCH").font(.jk(22, .heavy)).foregroundColor(.white)
-                    Text(TWeapons.modeNames[nav.tacMode]).font(.jk(17, .heavy)).foregroundColor(CS.modeCols[nav.tacMode])
+            LinearGradient(colors: [Color.black.opacity(0.55), .clear, Color.black.opacity(0.6)], startPoint: .top, endPoint: .bottom).allowsHitTesting(false)
+            BodycamGrain(strength: 0.05).allowsHitTesting(false)
+            // frame corners like a viewfinder
+            ForEach(0..<4, id: \.self) { i in
+                Path { p in
+                    let x: CGFloat = i % 2 == 0 ? 12 : W - 12, y: CGFloat = i < 2 ? 12 : H - 12
+                    let dx: CGFloat = i % 2 == 0 ? 18 : -18, dy: CGFloat = i < 2 ? 18 : -18
+                    p.move(to: CGPoint(x: x + dx, y: y)); p.addLine(to: CGPoint(x: x, y: y)); p.addLine(to: CGPoint(x: x, y: y + dy))
                 }
-                Text(String(format: "00:%02d", searchT)).font(.system(size: 44, weight: .heavy, design: .rounded)).foregroundColor(.white).monospacedDigit()
+                .stroke(Color.white.opacity(0.7), lineWidth: 1.5)
             }
-            .padding(.horizontal, 16).padding(.vertical, 8).background(Color.black.opacity(0.85)).overlay(Rectangle().stroke(Color.white.opacity(0.4), lineWidth: 1))
-            .position(x: W / 2, y: 52)
-            VStack(alignment: .leading, spacing: 5) {
-                Text("WINNER CHEST").font(.jk(14, .heavy)).foregroundColor(.white)
-                Text("Win matches to unlock the Winner Chest").font(.jk(10, .semibold)).foregroundColor(.white.opacity(0.8)).lineLimit(1)
-                chestRow("trophy.fill", "\(t.wins % 3)/3", Color(red: 0.1, green: 0.8, blue: 0.5), w: 200)
-                Text("KILLER CHEST").font(.jk(14, .heavy)).foregroundColor(.white).padding(.top, 4)
-                Text("Kill 50 enemies to unlock the Killer Chest").font(.jk(10, .semibold)).foregroundColor(.white.opacity(0.8)).lineLimit(1)
-                chestRow("scope", "\(t.kills % 50)/50", Color(red: 0.95, green: 0.2, blue: 0.5), w: 200)
-            }
-            .padding(12).frame(width: 232, alignment: .leading).background(Color.black.opacity(0.85)).overlay(Rectangle().stroke(Color.white.opacity(0.35), lineWidth: 1))
-            .position(x: 16 + 116, y: H * 0.52)
-            VStack(alignment: .leading, spacing: 6) {
-                Text("BEST PLAYERS OF THE DAY").font(.jk(14, .heavy)).foregroundColor(.white)
-                ForEach(0..<5, id: \.self) { i in
-                    let nm = TacRoster.pool[i].name
-                    let cols: [Color] = [Color(red: 0.75, green: 0.6, blue: 0.1), Color(red: 0.55, green: 0.57, blue: 0.62), Color(red: 0.8, green: 0.45, blue: 0.15), Color(red: 0.2, green: 0.22, blue: 0.27), Color(red: 0.2, green: 0.22, blue: 0.27)]
-                    HStack(spacing: 8) {
-                        Rectangle().fill(Color.white.opacity(0.85)).frame(width: 44, height: 28).overlay(Text("\(i + 1)").font(.jk(14, .heavy)).foregroundColor(.black))
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(nm).font(.jk(13, .heavy)).foregroundColor(i < 3 ? CS.gold : .white).lineLimit(1)
-                            Text("Score \(5200 - i * 520)").font(.jk(10, .heavy)).foregroundColor(.white)
-                        }
-                        Spacer(minLength: 0)
-                        Text("\(50 - i * 5)").font(.jk(12, .heavy)).foregroundColor(CS.gold)
+            .allowsHitTesting(false)
+            recDot("REC").position(x: 56, y: 28)
+            stamp().position(x: 120, y: 46)
+            Text("NET  AMERICAS-37").font(mono(10)).foregroundColor(LS.green).position(x: W - 84, y: 28)
+            // search status
+            VStack(spacing: 0) {
+                HStack(spacing: 14) {
+                    SF(CS.modeIcons[nav.tacMode], "circle.fill").font(.system(size: 22, weight: .bold)).foregroundColor(mc).frame(width: 30)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("SEARCHING FOR MATCH").font(.jk(10, .heavy)).foregroundColor(.white.opacity(0.65))
+                        Text(TWeapons.modeNames[nav.tacMode].uppercased()).font(.jk(18, .heavy)).foregroundColor(LS.orange)
                     }
-                    .padding(.horizontal, 6).frame(width: 240, height: 40).background(cols[i]).overlay(Rectangle().stroke(Color.white.opacity(0.8), lineWidth: 1))
+                    Spacer(minLength: 12)
+                    Text(String(format: "00:%02d", searchT)).font(.system(size: 40, weight: .heavy, design: .monospaced)).foregroundColor(.white).monospacedDigit()
+                }
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                TimelineView(.animation) { tl in
+                    let k = CGFloat((tl.date.timeIntervalSinceReferenceDate * 0.6).truncatingRemainder(dividingBy: 1))
+                    GeometryReader { g in
+                        Rectangle().fill(LS.orange).frame(width: g.size.width * 0.22).offset(x: (g.size.width * 1.22) * k - g.size.width * 0.22)
+                            .frame(width: g.size.width, alignment: .leading).clipped()
+                    }
+                    .frame(height: 3).background(Color.white.opacity(0.12))
                 }
             }
-            .position(x: W - 135, y: H * 0.6)
-            Text("Americas 37").font(.jk(11, .heavy)).foregroundColor(Color(red: 0.2, green: 0.9, blue: 0.3)).position(x: W - 50, y: 14)
-            CSButton(title: "CANCEL", w: 150, h: 44, size: 18) { screen = 1 }.position(x: 100, y: H - 34)
+            .frame(width: 400).background(Color.black.opacity(0.88)).overlay(Rectangle().stroke(LS.line, lineWidth: 1))
+            .position(x: W / 2, y: 76)
+            // unlock progress
+            LSPanel(title: "UNLOCKS", trailing: "THIS SEASON") {
+                VStack(spacing: 0) {
+                    unlockRow("WINNER CHEST", "Win matches to unlock", t.wins % 3, 3, LS.green)
+                    unlockRow("KILLER CHEST", "Kill 50 enemies to unlock", t.kills % 50, 50, LS.orange)
+                }
+            }
+            .frame(width: 210).position(x: 20 + 105, y: H * 0.5)
+            // leaderboard
+            LSPanel(title: "TOP OPERATORS", trailing: "TODAY") {
+                VStack(spacing: 0) {
+                    ForEach(0..<5, id: \.self) { i in
+                        let nm = TacRoster.pool[i].name
+                        HStack(spacing: 8) {
+                            Text(String(format: "%02d", i + 1)).font(mono(13)).foregroundColor(i == 0 ? LS.orange : .white.opacity(0.8)).frame(width: 24, alignment: .leading)
+                            Text(nm).font(.jk(12, .heavy)).foregroundColor(.white).lineLimit(1)
+                            Spacer(minLength: 0)
+                            Text("\(5200 - i * 520)").font(mono(11, .regular)).foregroundColor(.white.opacity(0.7))
+                            Text("\(50 - i * 5)K").font(mono(11)).foregroundColor(LS.orange).frame(width: 34, alignment: .trailing)
+                        }
+                        .padding(.horizontal, 10).frame(height: 30)
+                        .background(i == 0 ? Color.white.opacity(0.07) : .clear)
+                        .overlay(alignment: .bottom) { Rectangle().fill(LS.line).frame(height: 1) }
+                    }
+                }
+            }
+            .frame(width: 250).position(x: W - 20 - 125, y: H * 0.55)
+            Button { screen = 1 } label: {
+                Text("CANCEL").font(.jk(15, .heavy)).foregroundColor(.white).frame(width: 150, height: 40)
+                    .background(Color.black.opacity(0.6)).overlay(Rectangle().stroke(Color.white.opacity(0.8), lineWidth: 1.5))
+            }
+            .buttonStyle(TuiPress()).position(x: 20 + 75, y: H - 32)
         }
     }
 
@@ -374,56 +452,75 @@ struct LobbyView: View {
         let woods = nav.tacMode == 6
         let m = nav.tacMode
         let tips = ["Pistols are very useful weapons that can save you from a lot of trouble.", "Walls and props can be shot apart. Break cover to flush enemies out.", "Doors can be closed to slow pushes and hide sound.", "Loot the yard, finish your contract and reach an extraction zone alive. Die and you lose the bag."]
-        return VStack(spacing: 10) {
-            HStack(spacing: 12) {
-                SF("info.circle.fill").font(.system(size: 24)).foregroundColor(.white)
-                Text("Battle and make your way to the top of the leaderboard for better prizes.").font(.jk(14, .semibold)).foregroundColor(.white).lineLimit(1).minimumScaleFactor(0.7)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 14).frame(height: 50).background(Color.black.opacity(0.88)).overlay(Rectangle().stroke(Color.white.opacity(0.4), lineWidth: 1))
+        let mapTitle = TMap.mapNames[(woods || m == 7) ? 4 : nav.tacMap]
+        return ZStack {
+            BodycamGrain(strength: 0.05).allowsHitTesting(false)
             VStack(spacing: 8) {
-                HStack(alignment: .top, spacing: 16) {
+                HStack(spacing: 10) {
+                    recDot("REC")
+                    Text("TIP").font(mono(10)).foregroundColor(LS.orange)
+                    Text(m == 6 ? tips[3] : tips[Int(loadP * 3) % 3]).font(.jk(12, .medium)).foregroundColor(.white.opacity(0.92)).lineLimit(1).minimumScaleFactor(0.7)
+                    Spacer(minLength: 0)
+                    stamp()
+                }
+                .padding(.horizontal, 12).frame(height: 38).background(Color.black.opacity(0.88)).overlay(Rectangle().stroke(LS.line, lineWidth: 1))
+                HStack(alignment: .top, spacing: 14) {
                     ZStack {
                         Color.black
-                        if let im = mapImg { Image(uiImage: im).resizable().scaledToFit().padding(10).opacity(0.9) }
+                        if let im = mapImg { Image(uiImage: im).resizable().scaledToFit().padding(10).opacity(0.92) }
+                        // viewfinder brackets over the map plan
+                        ForEach(0..<4, id: \.self) { i in
+                            GeometryReader { g in
+                                Path { p in
+                                    let x: CGFloat = i % 2 == 0 ? 6 : g.size.width - 6, y: CGFloat = i < 2 ? 6 : g.size.height - 6
+                                    let dx: CGFloat = i % 2 == 0 ? 16 : -16, dy: CGFloat = i < 2 ? 16 : -16
+                                    p.move(to: CGPoint(x: x + dx, y: y)); p.addLine(to: CGPoint(x: x, y: y)); p.addLine(to: CGPoint(x: x, y: y + dy))
+                                }
+                                .stroke(Color.white.opacity(0.8), lineWidth: 1.5)
+                            }
+                        }
                     }
-                    .frame(width: W * 0.4, height: H * 0.56)
-                    .overlay(Rectangle().stroke(CS.blue.opacity(0.8), lineWidth: 2))
+                    .frame(width: W * 0.4, height: H * 0.55)
+                    .overlay(Rectangle().stroke(LS.line, lineWidth: 1))
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(alignment: .top) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(TMap.mapNames[(woods || m == 7) ? 4 : nav.tacMap]).font(.jk(34, .heavy)).lineLimit(1).minimumScaleFactor(0.6).foregroundColor(.white)
-                                Text(TWeapons.modeNames[m]).font(.jk(22, .heavy)).foregroundColor(CS.modeCols[m])
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("OPERATION").font(mono(10)).foregroundColor(.white.opacity(0.6))
+                                Text(mapTitle).font(.jk(34, .heavy)).lineLimit(1).minimumScaleFactor(0.6).foregroundColor(.white)
+                                Text(TWeapons.modeNames[m].uppercased()).font(.jk(18, .heavy)).foregroundColor(LS.orange)
                             }
                             Spacer()
-                            SF(CS.modeIcons[m], "circle.fill").font(.system(size: 40, weight: .bold)).foregroundColor(CS.modeCols[m])
+                            SF(CS.modeIcons[m], "circle.fill").font(.system(size: 30, weight: .bold)).foregroundColor(.white.opacity(0.85))
                         }
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("• \(m == 6 ? "Extract with your loot to keep it" : (m == 0 ? "First to 3 rounds wins" : "First to the kill target wins"))")
-                            Text("• \(m == 6 ? "Die and the bag is lost" : "5 minutes time limit")")
-                            Text("• \(m == 6 ? "Solo raid vs AI squads" : (m == 7 ? "60 combatants · 5 capture points" : "Up to 10 players"))")
+                        Rectangle().fill(LS.line).frame(height: 1).padding(.vertical, 2)
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(Array([m == 6 ? "Extract with your loot to keep it" : (m == 0 ? "First to 3 rounds wins" : "First to the kill target wins"),
+                                           m == 6 ? "Die and the bag is lost" : "5 minutes time limit",
+                                           m == 6 ? "Solo raid vs AI squads" : (m == 7 ? "60 combatants · 5 capture points" : "Up to 10 players")].enumerated()), id: \.offset) { _, line in
+                                HStack(spacing: 8) {
+                                    Rectangle().fill(LS.orange).frame(width: 5, height: 5)
+                                    Text(line).font(.jk(13, .semibold)).foregroundColor(.white)
+                                }
+                            }
                         }
-                        .font(.jk(14, .semibold)).foregroundColor(.white).padding(.top, 8)
                         Spacer(minLength: 0)
-                        Text(m == 6 ? tips[3] : tips[Int(loadP * 3) % 3]).font(.jk(14, .medium)).foregroundColor(.white.opacity(0.9)).lineLimit(2)
+                        Text(m == 6 ? "Bodycam rolling. Every shot is on the record." : "Walls and props can be shot apart. Manual aim, manual fire.").font(mono(10, .regular)).foregroundColor(.white.opacity(0.6)).lineLimit(2)
                     }
-                    .frame(maxHeight: H * 0.56)
+                    .frame(maxHeight: H * 0.55)
                 }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Map is loading").font(.jk(16, .semibold)).foregroundColor(.white)
-                    GeometryReader { gg in
-                        ZStack(alignment: .leading) {
-                            Rectangle().fill(Color.white.opacity(0.22))
-                            Rectangle().fill(Color(red: 0.1, green: 0.8, blue: 0.2)).frame(width: gg.size.width * loadP)
-                        }
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack {
+                        Text("LOADING MAP").font(mono(12)).foregroundColor(.white)
+                        Spacer()
+                        Text(String(format: "%03d%%", Int(loadP * 100))).font(mono(12)).foregroundColor(LS.orange)
                     }
-                    .frame(height: 5)
+                    lsBar(loadP, LS.orange, h: 6)
                 }
+                .padding(12).background(Color.black.opacity(0.88)).overlay(Rectangle().stroke(LS.line, lineWidth: 1))
+                Spacer(minLength: 0)
             }
-            .padding(14).background(Color.black.opacity(0.88)).overlay(Rectangle().stroke(Color.white.opacity(0.4), lineWidth: 1))
-            Spacer(minLength: 0)
+            .padding(.horizontal, 16).padding(.top, 10)
         }
-        .padding(.horizontal, 16).padding(.top, 10)
     }
 
     private var statsSheet: some View {
