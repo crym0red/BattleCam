@@ -187,6 +187,67 @@ struct LobbyHome: View {
     private var gunName: String { TWeapons.all.first(where: { $0.id == nav.tacGun })?.name ?? nav.tacGun.uppercased() }
     private var mapName: String { nav.tacMap == 5 ? TWorkshop.currentMap.name.uppercased() : TMap.mapNames[nav.tacMap == 6 ? 6 : 7] }
 
+    private func mapCard(_ id: Int, _ title: String, _ tag: String, _ h: CGFloat) -> some View {
+        let on = nav.tacMap == id
+        return Button { nav.tacMap = id } label: {
+            VStack(spacing: 2) {
+                mapGlyph(id).frame(height: h * 0.46)
+                Text(title).font(.jk(8, .heavy)).foregroundColor(on ? .black : .white).lineLimit(1).minimumScaleFactor(0.6)
+                Text(tag).font(.jk(6, .semibold)).foregroundColor(on ? .black.opacity(0.7) : .white.opacity(0.6))
+            }
+            .padding(.horizontal, 3).frame(maxWidth: .infinity).frame(height: h)
+            .background(on ? Color.white : Color(red: 0.05, green: 0.06, blue: 0.08).opacity(0.92))
+            .overlay(Rectangle().stroke(on ? LS.orange : LS.line, lineWidth: on ? 1.5 : 1))
+        }
+        .buttonStyle(TuiPress())
+    }
+
+    /// tiny floor-plan glyph so each map reads at a glance
+    private func mapGlyph(_ id: Int) -> some View {
+        let on = nav.tacMap == id
+        let c: Color = on ? .black.opacity(0.8) : .white.opacity(0.75)
+        return Canvas { ctx, sz in
+            var p = Path()
+            let w = sz.width, h = sz.height
+            switch id {
+            case 7:   // 3x3 rooms with a stair column
+                let x0 = w * 0.14, x1 = w * 0.86, y0 = 1.0, y1 = h - 1
+                p.addRect(CGRect(x: x0, y: y0, width: x1 - x0, height: y1 - y0))
+                for i in 1...2 { let x = x0 + (x1 - x0) * CGFloat(i) / 3; p.move(to: CGPoint(x: x, y: y0)); p.addLine(to: CGPoint(x: x, y: y1)) }
+                for i in 1...2 { let y = y0 + (y1 - y0) * CGFloat(i) / 3; p.move(to: CGPoint(x: x0, y: y)); p.addLine(to: CGPoint(x: x1, y: y)) }
+            case 6:
+                p.addRect(CGRect(x: 1, y: 1, width: w - 2, height: h - 2))
+                p.move(to: CGPoint(x: w * 0.33, y: 1)); p.addLine(to: CGPoint(x: w * 0.33, y: h * 0.62))
+                p.move(to: CGPoint(x: w * 0.66, y: h * 0.3)); p.addLine(to: CGPoint(x: w * 0.66, y: h - 1))
+                p.move(to: CGPoint(x: 1, y: h * 0.62)); p.addLine(to: CGPoint(x: w * 0.5, y: h * 0.62))
+                p.move(to: CGPoint(x: w * 0.5, y: h * 0.3)); p.addLine(to: CGPoint(x: w - 1, y: h * 0.3))
+            default:
+                p.addRect(CGRect(x: w * 0.2, y: 1, width: w * 0.6, height: h - 2))
+                p.move(to: CGPoint(x: w * 0.5, y: h * 0.3)); p.addLine(to: CGPoint(x: w * 0.5, y: h * 0.7))
+                p.move(to: CGPoint(x: w * 0.35, y: h * 0.5)); p.addLine(to: CGPoint(x: w * 0.65, y: h * 0.5))
+            }
+            ctx.stroke(p, with: .color(c), lineWidth: 1.3)
+        }
+    }
+
+    private var mapPicker: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text("OPERATION").font(.jk(7, .semibold)).foregroundColor(.white.opacity(0.65))
+                Spacer()
+                Text(mapName).font(.jk(8, .heavy)).foregroundColor(LS.orange).lineLimit(1).minimumScaleFactor(0.6)
+            }
+            HStack(spacing: 4) {
+                mapCard(7, "ANNEX", "CQC · 2 FLOORS", 52)
+                mapCard(6, "BLOCK 9", "LARGE", 52)
+                mapCard(5, "CUSTOM", "EDITOR", 52)
+            }
+        }
+        .padding(6)
+        .background(Color(red: 0.05, green: 0.06, blue: 0.08).opacity(0.92))
+        .overlay(Rectangle().stroke(LS.orange.opacity(0.8), lineWidth: 1))
+    }
+
     private func modeRow(_ mode: Int, _ icon: String, _ title: String, _ sub: String, art: Int, _ h: CGFloat) -> some View {
         let on = nav.tacMode == mode
         return Button { nav.tacMode = mode } label: {
@@ -333,28 +394,7 @@ struct LobbyHome: View {
                         challenge("Play 5 Matches", (t.wins + t.losses) % 5, 5, 1000, rh)
                     }
                 }
-                LSPanel(title: "SOCIAL", trailing: "4 ONLINE") {
-                    VStack(spacing: 0) {
-                        friend("GhostReaper", "In Lobby", LS.green, rh)
-                        friend("Lunar", "In Game", LS.orange, rh)
-                        friend("Vexx", "In Menu", LS.green, rh)
-                    }
-                }
-                Button { nav.tacMap = nav.tacMap == 7 ? 6 : (nav.tacMap == 6 ? 5 : 7) } label: {
-                    HStack(spacing: 8) {
-                        SF("triangle.fill").font(.system(size: 18)).foregroundColor(LS.orange).frame(width: 26)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("CURRENT OPERATION").font(.jk(7, .semibold)).foregroundColor(.white.opacity(0.65))
-                            Text(mapName).font(.jk(11, .semibold)).foregroundColor(.white).lineLimit(1).minimumScaleFactor(0.6)
-                        }
-                        Spacer(minLength: 0)
-                        Text(nav.tacMap == 5 ? "CUSTOM" : (nav.tacMap == 6 ? "LARGE" : "SMALL")).font(.jk(7, .heavy)).foregroundColor(.white.opacity(0.7))
-                        SF("arrow.left.arrow.right").font(.system(size: 10)).foregroundColor(.white.opacity(0.7))
-                    }
-                    .padding(.horizontal, 10).frame(height: max(36, H * 0.11))
-                    .background(Color(red: 0.05, green: 0.06, blue: 0.08).opacity(0.92)).overlay(Rectangle().stroke(LS.orange.opacity(0.8), lineWidth: 1))
-                }
-                .buttonStyle(TuiPress())
+                mapPicker
                 HStack(spacing: 4) {
                     ForEach(0..<3, id: \.self) { i in
                         Button { diff = i } label: {
